@@ -2,7 +2,8 @@ import os
 
 import torch
 import tqdm
-from Net import Net
+from Net import ModelNet
+from Net import ImgNet
 from dataset import Dataset
 from dataset import ShapeDataset
 from dataset import QueryDataset
@@ -21,12 +22,12 @@ class DCJN():
         lr = 0.00005
         beta1 = 0.5
         beta2 = 0.999
-        self.net = Net(cfg=config).to(device=device)
+        self.img_net = ImgNet().to(device=device)
+        self.model_net = ModelNet(self.config.modelnet.input_dim, self.config.modelnet.hidden_dim, self.config.modelnet.num_layers, self.config.modelnet.bat_first).to(device=device)
         self.loss = nn.CrossEntropyLoss(reduction='none')
-
         # loss = nn.CrossEntropyLoss()
-        self.optimal = torch.optim.Adam(self.net.parameters(), lr=lr, betas=(beta1, beta2))
-
+        self.optimal_img = torch.optim.Adam(self.img_net.parameters(), lr=lr, betas=(beta1, beta2))
+        self.optimal_model = torch.optim.Adam(self.model_net.parameters(), lr=lr, betas=(beta1, beta2))
         self.best_acc = 0
         self.epoch = 0
         self.it = 0
@@ -40,22 +41,29 @@ class DCJN():
 
         epochs = config.trainer.epochs
         for epoch in range(epochs):
-            self.net.train()
+            self.img_net.train()
+            self.model_net.train()
             pbar = tqdm.tqdm(retrieval_loader)
             for meta in pbar:
             ##### dataset debug ######
             # with torch.no_grad():
+                info_dict = {}
                 query_img = meta['query_img'].to(device=device)
                 cats_img = meta['cat_img'].to(device=device)
                 model= meta['model'].to(device=device)
                 model = model.reshape(len(query_img), -1, 3, self.config.data.pix_size, self.config.data.pix_size)
                 cats_model = meta['cat_model'].to(device=device)
 
-                self.optimal.zero_grad()
-                ri, ci, rm, cm = self.net(query_img, model)
+                self.optimal_img.zero_grad()
+                self.optimal_model.zero_grad()
 
-                l1 = self.loss(ci, cats_img)
-                l2 = self.loss(cm, cats_model)
+                ri, ci= self.img_net(query_img)
+                rm, cm = self.model_net(model)
+
+                l_di = self.loss(ci, cats_img)
+                l_di = l_di.sum()
+                l_dm = self.loss(cm, cats_model)
+                l_dm = l_dm.sum()
                 # a = torch.exp(torch.sum(ci * cats_img, dim=1)) / torch.sum(torch.exp(ci), dim=1)
                 # b = torch.exp(torch.sum(cm * cats_model, dim=1)) / torch.sum(torch.exp(cm), dim=1)
 
@@ -66,31 +74,47 @@ class DCJN():
                 indict = cats_img * cats_model
                 indict = torch.sum(indict, dim = 1)
                 indict = (-1)**indict
-                l3 =torch.sum(indict * torch.sum((ri - rm)**2, dim=1), dim = 0)
+                l_cross =torch.sum(indict * torch.sum((ri - rm)**2, dim=1), dim = 0)
 
-                if  epoch < 100:
-                    l = l1.sum() + l2.sum()
+
+                if  epoch < 0:
+                    l_di.backward()
+                    l_dm = l_dm.sum()
+                    l_dm.backward()
+
+                    self.optimal_img.step()
+                    self.optimal_model.step()
                 else :
-                    if l.item() > 10:
-                        l = l1.sum() + l2.sum()
-                    else:
-                        l = 0.8 * (l1.sum() + l2.sum()) + 0.2 * l3
-                l.backward()
-                self.optimal.step()
-                loss_item = l.item()
+                    l_img = 0.8 * (l_di.sum()) + 0.2 * l_cross
+                    l_img.backward(retain_graph=True)
+
+                    l_model = 0.8 * (l_dm.sum()) + 0.2 * l_cross
+                    l_model.backward()
+
+                    self.optimal_img.step()
+                    self.optimal_model.step()
+                    loss_img = l_img.item()
+                    loss_model = l_model.item()
+                    info_dict['loss_img'] = '%.5f' % (loss_img)
+                    info_dict['loss_model'] = '%.5f' % (loss_model)
+                loss_di = l_di.item()
+                loss_dm = l_dm.item()
+
                 # print(loss_item)
 
-                info_dict = {'loss': '%.5f' % (loss_item)}
+                info_dict['loss_di'] = '%.5f'% (loss_di)
+                info_dict['loss_dm'] = '%.5f'%(loss_dm)
                 pbar.set_postfix(info_dict)
                 pbar.set_description('Epoch: %d' % (epoch))
 
                 self.it += 1
-            if epoch > 99 and epoch % 10 == 0:
+            if epoch >= 1 :
                 self.test()
             self.epoch = epoch
     def test(self):
         cfg = self.config
-        self.net.eval()
+        self.img_net.eval()
+        self.model_net.eval()
         shape_loader = ShapeDataset.load_shape_dataset(cfg,batch_size=cfg.data.batch_size,shuffle=False, num_workers=cfg.data.num_workers, drop_last=False)
 
         shape_cats_list = []
@@ -101,10 +125,9 @@ class DCJN():
             with torch.no_grad():
                 rendering_img = meta['rendering_img'].to(device=device)
                 cats = meta['labels']['cat']
-                instance = meta['labels']['instance']
 
                 rendering = rendering_img.reshape(len(cats), -1, 3, self.config.data.pix_size, self.config.data.pix_size)
-                rendering_ebds, _ = self.net.get_model_ebd(rendering)
+                rendering_ebds, _ = self.model_net(rendering)
                 shape_cats_list += cats
                 shape_ebd_list.append(rendering_ebds)
         shape_ebd = torch.concat(shape_ebd_list, dim=0)
@@ -119,7 +142,7 @@ class DCJN():
                 query_img = meta['query_img'].to(device=device)
                 gt_cat = meta['cat'][0]
 
-                query_ebd, _ = self.net.get_Img_ebd(query_img)
+                query_ebd, _ = self.img_net(query_img)
                 query_ebd = query_ebd.repeat(shape_ebd.shape[0], 1)
                 same_score = 1 / (torch.sum((query_ebd - shape_ebd)**2, dim=1))
 
@@ -177,7 +200,9 @@ class DCJN():
             save_path = paths
             print('model paths %s saved!\n' % (paths,))
 
-        torch.save(self.net.state_dict(), save_path)
+        torch.save(self.img_net.state_dict(), save_path)
+        torch.save(self.model_net.state_dict(), save_path)
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()

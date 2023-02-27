@@ -32,12 +32,12 @@ class ImgNet(nn.Module):
         # 修改参数并添加层
         self.hidden = nn.Linear(4096, 4096)
 
-        self.Relu = nn.ReLU(inplace=True)
+        self.Relu = nn.ReLU(inplace=False)
         self.drop_out = nn.Dropout(p=0.5, inplace=False)
 
-        self.hidden2 = nn.Linear(4096, 100)
+        self.hidden2 = nn.Linear(4096, 50)
 
-        self.hidden3 = nn.Linear(100, 4)
+        self.hidden3 = nn.Linear(50, 4)
 
 
     def forward(self, X):
@@ -59,10 +59,10 @@ class ModelNet(nn.Module):
         super().__init__()
         self.backbone = backbone()
         self.model = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first = batch_first)
-        self.Relu = nn.ReLU(inplace=True)
+        self.Relu = nn.ReLU(inplace=False)
         self.drop_out = nn.Dropout(p=0.5,inplace=False)
-        self.hidden = nn.Linear(4096, 100)
-        self.hidden2 = nn.Linear(100, 4)
+        self.hidden = nn.Linear(4096, 50)
+        self.hidden2 = nn.Linear(50, 4)
     def forward(self,X):
         X = X.reshape(-1,3,224,224)
         input = self.backbone.get(X)
