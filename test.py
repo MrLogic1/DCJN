@@ -8,7 +8,7 @@ from dataset import ShapeDataset
 from dataset import QueryDataset
 
 if torch.cuda.is_available():
-    device = 'cuda'
+    device = 'cuda:0'
 else:
     device = 'cpu'
 class DCJNTest:
@@ -59,7 +59,6 @@ class DCJNTest:
                 query_ebd, _ = self.net.get_Img_ebd(query_img)
                 query_ebd = query_ebd.repeat(shape_ebd.shape[0], 1)
                 same_score = 1 / (torch.sum((query_ebd - shape_ebd)**2, dim=1))
-
                 max_id = same_score.argmax()
                 pr_cat = shape_cats_list[max_id.item()]
 

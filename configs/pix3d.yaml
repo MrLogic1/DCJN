@@ -1,8 +1,8 @@
 data:
   name: pix3d
-  num_workers: 2
-  batch_size: 4
-  root_dir: D:\diao\Keyan\IBSR_Pytorch\data
+  num_workers: 16
+  batch_size: 32
+  root_dir: /home/niudongmei/diao/IBSR_Pytorch/data
   mask_dir: mask_ocrnet
   images_dir: img
   render_path: rendering_pix3d.pkl

@@ -7,7 +7,7 @@ from dataset import Dataset
 class backbone():
     def __init__(self):
         if torch.cuda.is_available():
-            device = 'cuda'
+            device = 'cuda:0'
         else:
             device = 'cpu'
 

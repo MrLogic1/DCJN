@@ -53,7 +53,7 @@ class Dataset(Dataset):
         query_img = self.query_transform(Image.open(os.path.join(self.data_dir, info['img'])).convert("RGB"))
 
 
-        info2 = self.json_dict[-index]
+        info2 = self.json_dict[index]
         cat2 = info2['category']
         cats_ones2 = dic_one[cat2]
         instance = info2['model'].split('/')[-2]

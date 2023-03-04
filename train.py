@@ -11,15 +11,15 @@ import yaml
 import argparse
 
 if torch.cuda.is_available():
-    device = 'cuda'
+    device = 'cuda:0'
 else:
     device = 'cpu'
 
 class DCJN():
     def __init__(self, config):
         self.config = config
-        lr = 0.00005
-        beta1 = 0.5
+        lr = 0.000001
+        beta1 = 0.9
         beta2 = 0.999
         self.net = Net(cfg=config).to(device=device)
         self.loss = nn.CrossEntropyLoss(reduction='none')
@@ -63,29 +63,42 @@ class DCJN():
                 # l1 = torch.sum(-torch.log(a), dim = 0)
                 # l2 = torch.sum(-torch.log(b), dim=0)
 
-                indict = cats_img * cats_model
-                indict = torch.sum(indict, dim = 1)
-                indict = (-1)**indict
-                l3 =torch.sum(indict * torch.sum((ri - rm)**2, dim=1), dim = 0)
-
-                if  epoch < 100:
+                info_dict = {}
+                if  epoch < 120:
                     l = l1.sum() + l2.sum()
+                    loss_item = l.item()
+                    info_dict['loss1'] = loss_item
                 else :
-                    if l.item() > 10:
-                        l = l1.sum() + l2.sum()
-                    else:
-                        l = 0.8 * (l1.sum() + l2.sum()) + 0.2 * l3
+                    # if l.item() > 10:
+                    #      l = l1.sum() + l2.sum()
+                    # else:
+
+                    indict = cats_img * cats_model
+                    indict = torch.sum(indict, dim = 1)
+                    indict = (-1)**(indict+1)
+                    l3 = torch.sum(indict * torch.sum((ri - rm) ** 2, dim=1), dim=0)
+                    l = 0.92 * (l1.sum() + l2.sum())  + 0.08 * l3
+
+                    loss3_item = l3.item()
+                    loss_item = l.item()
+
+                    ri = torch.sum(torch.sum(ri,dim=1),dim=0)
+                    rm = torch.sum(torch.sum(rm,dim=1),dim=0)
+
+                    info_dict['ri'] = ri.item()
+                    info_dict['rm'] = rm.item()
+                    info_dict['loss_cross'] = loss3_item
+                    info_dict['loss_all'] = loss_item
+
                 l.backward()
                 self.optimal.step()
-                loss_item = l.item()
                 # print(loss_item)
 
-                info_dict = {'loss': '%.5f' % (loss_item)}
                 pbar.set_postfix(info_dict)
                 pbar.set_description('Epoch: %d' % (epoch))
 
                 self.it += 1
-            if epoch > 99 and epoch % 10 == 0:
+            if epoch >= 100 and epoch % 2 == 0:
                 self.test()
             self.epoch = epoch
     def test(self):
